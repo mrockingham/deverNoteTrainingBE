@@ -1,6 +1,6 @@
 import express from 'express';
 import { 
-  getMyCodeBlocks, 
+  getCodeBlocks,     // <--- 1. Swapped import here
   createCodeBlock, 
   updateCodeBlock, 
   deleteCodeBlock, 
@@ -14,7 +14,7 @@ const router = express.Router();
 router.use(protect);
 
 router.route('/')
-  .get(getMyCodeBlocks)
+  .get(getCodeBlocks) // <--- 2. Swapped function here
   .post(createCodeBlock);
 
 // Note: This must come BEFORE the /:id route so Express doesn't think "folders" is an ID

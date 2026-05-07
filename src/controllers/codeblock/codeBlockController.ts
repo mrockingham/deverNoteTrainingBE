@@ -4,26 +4,26 @@ import { AuthRequest } from '../../middleware/authMiddleware.js';
 
 // GET /api/codeblocks
 // Get all code blocks belonging to the logged-in user
-export const getMyCodeBlocks = async (req: AuthRequest, res: Response): Promise<void> => {
-  try {
-    const userEmail = req.user?.email;
+// export const getMyCodeBlocks = async (req: AuthRequest, res: Response): Promise<void> => {
+//   try {
+//     const userEmail = req.user?.email;
 
-    if (!userEmail) {
-      res.status(400).json({ error: 'User email not found' });
-      return;
-    }
+//     if (!userEmail) {
+//       res.status(400).json({ error: 'User email not found' });
+//       return;
+//     }
 
-    const codeBlocks = await prisma.codeBlock.findMany({
-      where: { creator: userEmail },
-      orderBy: { createdAt: 'desc' } // Newest first
-    });
+//     const codeBlocks = await prisma.codeBlock.findMany({
+//       where: { creator: userEmail },
+//       orderBy: { createdAt: 'desc' } // Newest first
+//     });
 
-    res.status(200).json(codeBlocks);
-  } catch (error) {
-    console.error('Error fetching code blocks:', error);
-    res.status(500).json({ error: 'Failed to fetch code blocks' });
-  }
-};
+//     res.status(200).json(codeBlocks);
+//   } catch (error) {
+//     console.error('Error fetching code blocks:', error);
+//     res.status(500).json({ error: 'Failed to fetch code blocks' });
+//   }
+// };
 
 // POST /api/codeblocks
 // Create a new code block
@@ -118,32 +118,39 @@ export const deleteCodeBlock = async (req: AuthRequest, res: Response): Promise<
     res.status(500).json({ error: 'Failed to delete code block' });
   }
 };
-
 // GET /api/codeblocks/folders
-// Get unique categories for the logged-in user
-export const getUserFolders = async (req: AuthRequest, res: Response): Promise<void> => {
+// Returns a list of unique categories for the logged-in user
+export const getUserFolders = async (req: any, res: any): Promise<void> => {
   try {
-    const userEmail = req.user?.email;
-
-    if (!userEmail) {
-      res.status(400).json({ error: 'User email not found' });
-      return;
-    }
-
-    // Prisma's group-by allows us to get unique category names easily
     const folders = await prisma.codeBlock.groupBy({
       by: ['category'],
-      where: { 
-        creator: userEmail,
-        category: { not: '' } // Exclude empty categories
-      },
+      where: { creator: req.user.email },
     });
-
-    // Format it to match what your frontend expects: [{ folder: 'React' }, { folder: 'CSS' }]
-    const formattedFolders = folders.map(f => ({ folder: f.category }));
-    res.status(200).json(formattedFolders);
+    
+    res.status(200).json(folders);
   } catch (error) {
     console.error('Error fetching folders:', error);
     res.status(500).json({ error: 'Failed to fetch folders' });
+  }
+};
+
+// GET /api/codeblocks?category=React
+// Returns the actual code blocks, optionally filtered by category
+export const getCodeBlocks = async (req: any, res: any): Promise<void> => {
+  try {
+    const { category } = req.query;
+    
+    const blocks = await prisma.codeBlock.findMany({
+      where: { 
+        creator: req.user.email,
+        ...(category ? { category: String(category) } : {}) 
+      },
+      orderBy: { updatedAt: 'desc' }
+    });
+
+    res.status(200).json(blocks);
+  } catch (error) {
+    console.error('Error fetching code blocks:', error);
+    res.status(500).json({ error: 'Failed to fetch code blocks' });
   }
 };
