@@ -1,0 +1,133 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+
+}
+
+// --- CORE APP MODELS ---
+
+model User {
+  id          String         @id @default(uuid())
+  name        String
+  userName    String?        @unique
+  email       String         @unique
+  password    String         // Hashed using bcrypt
+  theme       String         @default("code dark")
+  hasProvider Boolean        @default(false)
+  provider    String?
+  userImage   String?
+  
+  
+  // --- NEW FIELDS TO ADD ---
+  userImageId String?
+  bio         String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @default(now()) @updatedAt
+
+  // Relations (Keep these!)
+  codeBlocks  CodeBlock[]
+  projects    Project[]
+  progress    UserProgress[]
+}
+
+model Theme {
+  id                 String   @id @default(uuid())
+  name               String   @unique
+  foregroundText     String?
+  gradient           Boolean  @default(false)
+  boxShadows         Boolean  @default(false)
+  backgroundText     String?
+  boxShadowSettings  String[]
+  backgroundSolid    String?
+  backgroundGradient String[]
+}
+
+model UtilityLink {
+  id          String  @id @default(uuid())
+  siteName    String
+  siteUrl     String
+  type        String
+  imageUrl    String?
+  linkImageId String?
+}
+
+// --- THE SCRATCHPAD (Single Snippets) ---
+
+model CodeBlock {
+  id          String   @id @default(uuid())
+  title       String
+  creator     String   
+  category    String
+  subCategory String?
+  javascript  String?
+  css         String?
+  html        String?
+  note        String?
+  tags        String[] 
+  isPublic    Boolean  @default(false)
+  favorites   String[] 
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [creator], references: [email])
+}
+
+// --- THE REACT/SANDPACK ENVIRONMENT ---
+
+model Project {
+  id          String   @id @default(uuid())
+  title       String
+  creator     String   
+  isPublic    Boolean  @default(false)
+  files       Json     // Stores the full Sandpack file tree
+  tags        String[]
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  user        User     @relation(fields: [creator], references: [email])
+}
+
+// --- THE TRAINING TRACK (Agendas & Repetition) ---
+
+model Agenda {
+  id          String   @id @default(uuid())
+  title       String   
+  description String
+  creatorId   String   
+  createdAt   DateTime @default(now())
+  
+  lessons     Lesson[]
+}
+
+model Lesson {
+  id             String   @id @default(uuid())
+  agendaId       String
+  title          String
+  instructions   String   
+  startingFiles  Json     // The initial Sandpack state
+  solutionFiles  Json     // The expected final code
+  orderIndex     Int      
+  
+  agenda         Agenda   @relation(fields: [agendaId], references: [id])
+  progress       UserProgress[]
+}
+
+model UserProgress {
+  id             String   @id @default(uuid())
+  userId         String
+  lessonId       String
+  isCompleted    Boolean  @default(false)
+  
+  // Spaced Repetition Logic
+  lastReviewedAt DateTime @default(now()) 
+  reviewInterval Int      @default(1) 
+  masteryLevel   Int      @default(0) 
+  
+  user           User     @relation(fields: [userId], references: [id])
+  lesson         Lesson   @relation(fields: [lessonId], references: [id])
+
+  @@unique([userId, lessonId]) 
+}
