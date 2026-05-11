@@ -1,39 +1,28 @@
-import { Response } from 'express';
-import prisma from '../../prisma.js';
-import { AuthRequest } from '../../middleware/authMiddleware.js';
-
-// GET /api/codeblocks
-// Get all code blocks belonging to the logged-in user
-// export const getMyCodeBlocks = async (req: AuthRequest, res: Response): Promise<void> => {
-//   try {
-//     const userEmail = req.user?.email;
-
-//     if (!userEmail) {
-//       res.status(400).json({ error: 'User email not found' });
-//       return;
-//     }
-
-//     const codeBlocks = await prisma.codeBlock.findMany({
-//       where: { creator: userEmail },
-//       orderBy: { createdAt: 'desc' } // Newest first
-//     });
-
-//     res.status(200).json(codeBlocks);
-//   } catch (error) {
-//     console.error('Error fetching code blocks:', error);
-//     res.status(500).json({ error: 'Failed to fetch code blocks' });
-//   }
-// };
+import { Response } from "express";
+import prisma from "../../prisma.js";
+import { AuthRequest } from "../../middleware/authMiddleware.js";
 
 // POST /api/codeblocks
-// Create a new code block
-export const createCodeBlock = async (req: AuthRequest, res: Response): Promise<void> => {
+export const createCodeBlock = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
   try {
-    const userEmail = req.user?.email;
-    const { title, category, subCategory, javascript, css, html, note, tags, isPublic } = req.body;
+    const userId = req.user?.id;
+    const {
+      title,
+      category,
+      subCategory,
+      javascript,
+      css,
+      html,
+      note,
+      tags,
+      isPublic,
+    } = req.body;
 
-    if (!userEmail) {
-      res.status(400).json({ error: 'User email not found' });
+    if (!userId) {
+      res.status(400).json({ error: "User id not found" });
       return;
     }
 
@@ -46,32 +35,45 @@ export const createCodeBlock = async (req: AuthRequest, res: Response): Promise<
         css,
         html,
         note,
-        tags: tags || [],
-        isPublic: isPublic || false,
-        creator: userEmail, // Links the block to the user via their email
+        tags: Array.isArray(tags) ? tags : [],
+        isPublic: typeof isPublic === "boolean" ? isPublic : false,
+        creatorId: userId,
       },
     });
 
     res.status(201).json(newCodeBlock);
   } catch (error) {
-    console.error('Error creating code block:', error);
-    res.status(500).json({ error: 'Failed to create code block' });
+    console.error("Error creating code block:", error);
+    res.status(500).json({ error: "Failed to create code block" });
   }
 };
 
-
 // PUT /api/codeblocks/:id
-// Update an existing code block
-export const updateCodeBlock = async (req: AuthRequest, res: Response): Promise<void> => {
+export const updateCodeBlock = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
   try {
-    const id = req.params.id as string;
-    const userEmail = req.user?.email;
+    const id = typeof req.params.id === "string" ? req.params.id : undefined;
+    const userId = req.user?.id;
     const data = req.body;
 
-    // Verify the user owns this block before updating
-    const existingBlock = await prisma.codeBlock.findUnique({ where: { id } });
-    if (!existingBlock || existingBlock.creator !== userEmail) {
-      res.status(401).json({ error: 'Not authorized to update this code block' });
+    if (!id) {
+      res.status(400).json({ error: "Code block id is required" });
+      return;
+    }
+
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const existingBlock = await prisma.codeBlock.findUnique({
+      where: { id },
+    });
+
+    if (!existingBlock || existingBlock.creatorId !== userId) {
+      res.status(401).json({ error: "Not authorized to update this code block" });
       return;
     }
 
@@ -92,65 +94,102 @@ export const updateCodeBlock = async (req: AuthRequest, res: Response): Promise<
 
     res.status(200).json(updatedBlock);
   } catch (error) {
-    console.error('Error updating code block:', error);
-    res.status(500).json({ error: 'Failed to update code block' });
+    console.error("Error updating code block:", error);
+    res.status(500).json({ error: "Failed to update code block" });
   }
 };
 
 // DELETE /api/codeblocks/:id
-// Delete a code block
-export const deleteCodeBlock = async (req: AuthRequest, res: Response): Promise<void> => {
+export const deleteCodeBlock = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
   try {
-    const id = req.params.id as string;
-    const userEmail = req.user?.email;
+    const id = typeof req.params.id === "string" ? req.params.id : undefined;
+    const userId = req.user?.id;
 
-    // Verify ownership
-    const existingBlock = await prisma.codeBlock.findUnique({ where: { id } });
-    if (!existingBlock || existingBlock.creator !== userEmail) {
-      res.status(401).json({ error: 'Not authorized to delete this code block' });
+    if (!id) {
+      res.status(400).json({ error: "Code block id is required" });
+      return;
+    }
+
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const existingBlock = await prisma.codeBlock.findUnique({
+      where: { id },
+    });
+
+    if (!existingBlock || existingBlock.creatorId !== userId) {
+      res.status(401).json({ error: "Not authorized to delete this code block" });
       return;
     }
 
     await prisma.codeBlock.delete({ where: { id } });
-    res.status(200).json({ message: 'Code block deleted successfully', id });
+
+    res.status(200).json({
+      message: "Code block deleted successfully",
+      id,
+    });
   } catch (error) {
-    console.error('Error deleting code block:', error);
-    res.status(500).json({ error: 'Failed to delete code block' });
+    console.error("Error deleting code block:", error);
+    res.status(500).json({ error: "Failed to delete code block" });
   }
 };
+
 // GET /api/codeblocks/folders
-// Returns a list of unique categories for the logged-in user
-export const getUserFolders = async (req: any, res: any): Promise<void> => {
+export const getUserFolders = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
   try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const folders = await prisma.codeBlock.groupBy({
-      by: ['category'],
-      where: { creator: req.user.email },
+      by: ["category"],
+      where: { creatorId: userId },
     });
-    
+
     res.status(200).json(folders);
   } catch (error) {
-    console.error('Error fetching folders:', error);
-    res.status(500).json({ error: 'Failed to fetch folders' });
+    console.error("Error fetching folders:", error);
+    res.status(500).json({ error: "Failed to fetch folders" });
   }
 };
 
 // GET /api/codeblocks?category=React
-// Returns the actual code blocks, optionally filtered by category
-export const getCodeBlocks = async (req: any, res: any): Promise<void> => {
+export const getCodeBlocks = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
   try {
-    const { category } = req.query;
-    
+    const userId = req.user?.id;
+    const category =
+      typeof req.query.category === "string" ? req.query.category : undefined;
+
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
     const blocks = await prisma.codeBlock.findMany({
-      where: { 
-        creator: req.user.email,
-        ...(category ? { category: String(category) } : {}) 
+      where: {
+        creatorId: userId,
+        ...(category ? { category } : {}),
       },
-      orderBy: { updatedAt: 'desc' }
+      orderBy: { updatedAt: "desc" },
     });
 
     res.status(200).json(blocks);
   } catch (error) {
-    console.error('Error fetching code blocks:', error);
-    res.status(500).json({ error: 'Failed to fetch code blocks' });
+    console.error("Error fetching code blocks:", error);
+    res.status(500).json({ error: "Failed to fetch code blocks" });
   }
 };
