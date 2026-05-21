@@ -30,25 +30,49 @@ export const createSandboxSession = async (
       return;
     }
 
-    const data = parsed.data;
 
-    const sandboxSession = await prisma.sandboxSession.create({
-      data: {
-        userId,
-        title: data.title,
-        description: data.description,
-        sandpackTemplate: data.sandpackTemplate,
-        dependencies: data.dependencies as Prisma.InputJsonValue | undefined,
-        files: normalizeSandpackFiles(data.files),
-        sourceType: data.sourceType ?? "manual",
-        status: data.status ?? "active",
-        lessonPlanId: data.lessonPlanId,
-        lessonStepId: data.lessonStepId,
-        practiceSessionId: data.practiceSessionId,
-      },
-    });
+const data = parsed.data;
 
-    res.status(201).json(sandboxSession);
+const existingLinkedSandbox =
+  data.sourceType === "practice" &&
+  data.practiceSessionId &&
+  data.lessonStepId
+    ? await prisma.sandboxSession.findFirst({
+        where: {
+          userId,
+          sourceType: "practice",
+          practiceSessionId: data.practiceSessionId,
+          lessonStepId: data.lessonStepId,
+          status: "active",
+        },
+        orderBy: {
+          updatedAt: "desc",
+        },
+      })
+    : null;
+
+if (existingLinkedSandbox) {
+  res.status(200).json(existingLinkedSandbox);
+  return;
+}
+
+const sandboxSession = await prisma.sandboxSession.create({
+  data: {
+    userId,
+    title: data.title,
+    description: data.description,
+    sandpackTemplate: data.sandpackTemplate,
+    dependencies: data.dependencies as Prisma.InputJsonValue | undefined,
+    files: normalizeSandpackFiles(data.files),
+    sourceType: data.sourceType ?? "manual",
+    status: data.status ?? "active",
+    lessonPlanId: data.lessonPlanId,
+    lessonStepId: data.lessonStepId,
+    practiceSessionId: data.practiceSessionId,
+  },
+});
+
+res.status(201).json(sandboxSession);
   } catch (error) {
     console.error("Error creating sandbox session:", error);
     res.status(500).json({ error: "Failed to create sandbox session" });
@@ -248,5 +272,33 @@ export const deleteSandboxSession = async (
   } catch (error) {
     console.error("Error deleting sandbox session:", error);
     res.status(500).json({ error: "Failed to delete sandbox session" });
+  }
+};
+
+export const deleteAllSandboxSessions = async (
+  req: AuthRequest,
+  res: Response
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const result = await prisma.sandboxSession.deleteMany({
+      where: {
+        userId,
+      },
+    });
+
+    res.status(200).json({
+      message: "All sandbox sessions deleted successfully",
+      deletedCount: result.count,
+    });
+  } catch (error) {
+    console.error("Error deleting all sandbox sessions:", error);
+    res.status(500).json({ error: "Failed to delete all sandbox sessions" });
   }
 };

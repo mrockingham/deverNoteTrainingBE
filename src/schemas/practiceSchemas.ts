@@ -2,9 +2,9 @@ import { z } from "zod";
 import { sandpackFilesSchema } from "./sandpackSchemas.js";
 
 export const createPracticeSessionSchema = z.object({
-  lessonPlanId: z.string().min(1),
+  lessonPlanId: z.string().uuid(),
+  startNew: z.boolean().optional(),
 });
-
 export const submitStepAttemptSchema = z.object({
   lessonStepId: z.string().min(1),
   repNumber: z.number().int().min(1),

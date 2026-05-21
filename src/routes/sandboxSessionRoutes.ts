@@ -5,6 +5,7 @@ import {
   getSandboxSessions,
   getSandboxSessionById,
   deleteSandboxSession,
+  deleteAllSandboxSessions,
 } from "../controllers/sandboxSessionController.js";
 import { protect } from "../middleware/authMiddleware.js";
 
@@ -16,7 +17,9 @@ router.route("/")
   .get(getSandboxSessions)
   .post(createSandboxSession);
 
-router.route("/:id")
+router.delete("/all", deleteAllSandboxSessions);
+
+router.route("/all/:id")
   .get(getSandboxSessionById)
   .put(updateSandboxSession)
   .delete(deleteSandboxSession);

@@ -1,15 +1,18 @@
 import { sandpackFilesSchema } from "../schemas/sandpackSchemas.js";
-import type { SandpackFiles } from "../types/sandpack.js";
 
-export const parseSandpackFiles = (input: unknown): SandpackFiles => {
+export type ParsedSandpackFiles = Record<string, string>;
+
+export const parseSandpackFiles = (input: unknown): ParsedSandpackFiles => {
   const parsed = sandpackFilesSchema.parse(input);
 
-  const normalized: SandpackFiles = Object.fromEntries(
-    Object.entries(parsed).map(([path, value]) => [
-      path,
-      typeof value === "string" ? { code: value } : value,
-    ])
-  );
+  return Object.fromEntries(
+    Object.entries(parsed).map(([path, value]) => {
+      const normalizedPath = path.startsWith("/") ? path : `/${path}`;
 
-  return normalized;
+      return [
+        normalizedPath,
+        typeof value === "string" ? value : value.code ?? "",
+      ];
+    }),
+  );
 };

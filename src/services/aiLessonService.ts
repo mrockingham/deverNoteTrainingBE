@@ -10,105 +10,6 @@ const client = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 });
 
-const buildMockDraft = (
-  input: GenerateAiLessonRequest
-): AiGeneratedLessonDraft => {
-  const title = input.title?.trim() || `${input.topic} Mastery`;
-
-  return {
-    lessonPlan: {
-      title,
-      topic: input.topic,
-      level: input.level,
-      framework: input.framework,
-      focus: input.focus,
-      notes: input.notes,
-      description:
-        input.description || `AI-generated lesson plan for ${input.topic}.`,
-      aiSummary:
-        "This draft was generated in mock mode. Replace the mock provider with a real LLM call when ready.",
-      sandpackTemplate: input.sandpackTemplate,
-      dependencies: input.dependencies,
-    },
-    lessonSteps: [
-      {
-        orderIndex: 0,
-        phaseTitle: "Step 1: Foundation",
-        title: "Build the smallest working version",
-        description:
-          "Create the simplest possible version of the target feature before refinement.",
-        instructions: [
-          "Create the smallest working component",
-          "Avoid extra abstractions",
-          "Focus on one visible result",
-        ],
-        hints: ["Keep the first step tiny", "Use plain markup before polish"],
-        starterFiles: {
-          "/App.tsx": {
-            code: "export default function App() { return <div>Start here</div>; }",
-            active: true,
-          },
-        },
-        solutionFiles: {
-          "/App.tsx": {
-            code: "export default function App() { return <div className='card'>Hello</div>; }",
-            active: true,
-          },
-          "/styles.css": {
-            code: ".card { padding: 16px; border-radius: 12px; }",
-          },
-          "/package.json": {
-            code: JSON.stringify(
-              { dependencies: input.dependencies ?? {} },
-              null,
-              2
-            ),
-          },
-        },
-        verificationRules: {
-          mustContain: ["card", "padding", "border-radius"],
-        },
-      },
-      {
-        orderIndex: 1,
-        phaseTitle: "Step 2: Refinement",
-        title: "Refine layout and visual structure",
-        description:
-          "Improve the base component and bring it closer to the target.",
-        instructions: ["Refine spacing", "Improve structure", "Keep code readable"],
-        hints: ["Do not overbuild the second step"],
-        starterFiles: {
-          "/App.tsx": {
-            code: "export default function App() { return <div className='card'>Hello</div>; }",
-            active: true,
-          },
-          "/styles.css": {
-            code: ".card { padding: 16px; border-radius: 12px; }",
-          },
-        },
-        solutionFiles: {
-          "/App.tsx": {
-            code: "export default function App() { return <div className='card'>Refined card</div>; }",
-            active: true,
-          },
-          "/styles.css": {
-            code: ".card { padding: 20px; border-radius: 16px; box-shadow: 0 8px 24px rgba(0,0,0,0.15); }",
-          },
-          "/package.json": {
-            code: JSON.stringify(
-              { dependencies: input.dependencies ?? {} },
-              null,
-              2
-            ),
-          },
-        },
-        verificationRules: {
-          mustContain: ["card", "padding", "border-radius"],
-        },
-      },
-    ],
-  };
-};
 
 const extractTextFromResponse = (response: unknown): string => {
   if (!response || typeof response !== "object") {
@@ -171,7 +72,7 @@ const extractJsonBlock = (text: string): string => {
   return trimmed.slice(firstBrace, lastBrace + 1);
 };
 
-const callRealProvider = async (
+const callProvider = async (
   input: GenerateAiLessonRequest
 ): Promise<AiGeneratedLessonDraft> => {
   if (!process.env.OPENAI_API_KEY) {
@@ -207,36 +108,43 @@ const callRealProvider = async (
   const rawText = extractTextFromResponse(response);
   const jsonText = extractJsonBlock(rawText);
 
-//   console.log("[AI LESSON RAW RESPONSE TEXT]");
-// console.log(rawText);
 
-  let parsedJson: unknown;
-  try {
-    parsedJson = JSON.parse(jsonText);
-  } catch (error) {
-    console.error("Failed to parse model JSON:", rawText);
-    throw new Error("Model returned invalid JSON.");
-  }
 
- const normalizedDraft = normalizeAiLessonDraft(parsedJson);
-return aiGeneratedLessonDraftSchema.parse(normalizedDraft);
+let parsedJson: unknown;
+
+try {
+  parsedJson = JSON.parse(jsonText);
+} catch (error) {
+  console.error("Failed to parse model JSON:", rawText);
+  throw new Error("Model returned invalid JSON.");
+}
+
+const normalizedDraft = normalizeAiLessonDraft(parsedJson);
+
+const result = aiGeneratedLessonDraftSchema.safeParse(normalizedDraft);
+
+if (!result.success) {
+  console.error("[AI LESSON RAW JSON]");
+  console.dir(parsedJson, { depth: 8 });
+
+  console.error("[AI LESSON NORMALIZED JSON]");
+  console.dir(normalizedDraft, { depth: 8 });
+
+  console.error("[AI LESSON ZOD ERROR]");
+  console.dir(result.error.format(), { depth: 8 });
+
+  throw result.error;
+}
+
+return result.data;
 };
 
 export const generateAiLessonDraft = async (
   input: GenerateAiLessonRequest
 ): Promise<AiGeneratedLessonDraft> => {
-  const { systemPrompt, userPrompt } = buildAiLessonPrompt(input);
 
-  // console.log("[AI LESSON SYSTEM PROMPT]");
-  // console.log(systemPrompt);
-  // console.log("[AI LESSON USER PROMPT]");
-  // console.log(userPrompt);
 
-  const useMock = process.env.MOCK_AI_LESSONS === "true";
-
-  const rawDraft = useMock
-    ? buildMockDraft(input)
-    : await callRealProvider(input);
+  const rawDraft =  await callProvider(input);
 
   return aiGeneratedLessonDraftSchema.parse(rawDraft);
 };

@@ -1,21 +1,16 @@
-import type { GenerateAiLessonRequest } from "../schemas/aiLessonSchemas.js";
-
-const stringifyMaybe = (value: unknown): string => {
-  if (value === undefined || value === null) {
-    return "";
-  }
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
+const stringifyMaybe = (value) => {
+    if (value === undefined || value === null) {
+        return "";
+    }
+    try {
+        return JSON.stringify(value, null, 2);
+    }
+    catch {
+        return String(value);
+    }
 };
-
-export const buildAiLessonPrompt = (
-  input: GenerateAiLessonRequest
-): { systemPrompt: string; userPrompt: string } => {
-  const systemPrompt = `
+export const buildAiLessonPrompt = (input) => {
+    const systemPrompt = `
 You are creating deliberate-practice coding lessons for a platform called DeverNote.
 
 Your job:
@@ -75,8 +70,7 @@ Rules:
   ]
 }
 `.trim();
-
-  const userPrompt = `
+    const userPrompt = `
 Create a coding lesson draft from this input:
 
 title: ${input.title ?? ""}
@@ -99,6 +93,5 @@ Additional instructions:
 - Prefer React-friendly examples when framework is React
 - Use mustContain and requiredFiles in verificationRules when possible
 `.trim();
-
-  return { systemPrompt, userPrompt };
+    return { systemPrompt, userPrompt };
 };

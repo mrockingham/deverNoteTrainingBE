@@ -1,8 +1,15 @@
-import type { SandpackFiles } from "../types/sandpack.js";
+type SandpackFileMap = Record<string, string>;
+
+type VerificationTextRule =
+  | string
+  | {
+      file?: string;
+      text: string;
+    };
 
 export interface VerificationRules {
-  mustContain?: string[];
-  mustNotContain?: string[];
+  mustContain?: VerificationTextRule[];
+  mustNotContain?: VerificationTextRule[];
   requiredFiles?: string[];
 }
 
@@ -25,6 +32,29 @@ const normalizeStringArray = (value: unknown): string[] => {
   return value.filter((item): item is string => typeof item === "string");
 };
 
+const normalizeVerificationTextRules = (
+  value: unknown,
+): VerificationTextRule[] => {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.filter((item): item is VerificationTextRule => {
+    if (typeof item === "string") return true;
+
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      return false;
+    }
+
+    const raw = item as Record<string, unknown>;
+
+    return (
+      typeof raw.text === "string" &&
+      (raw.file === undefined || typeof raw.file === "string")
+    );
+  });
+};
+
 const extractVerificationRules = (input: unknown): VerificationRules => {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     return {};
@@ -33,80 +63,152 @@ const extractVerificationRules = (input: unknown): VerificationRules => {
   const raw = input as Record<string, unknown>;
 
   return {
-    mustContain: normalizeStringArray(raw.mustContain),
-    mustNotContain: normalizeStringArray(raw.mustNotContain),
+    mustContain: normalizeVerificationTextRules(raw.mustContain),
+    mustNotContain: normalizeVerificationTextRules(raw.mustNotContain),
     requiredFiles: normalizeStringArray(raw.requiredFiles),
   };
 };
 
-const combineAllCode = (files: SandpackFiles): string => {
-  return Object.values(files)
-    .map((file) => file.code)
-    .join("\n");
+const getFileCode = (
+  files: SandpackFileMap,
+  path: string,
+): string | undefined => {
+  return files[path] ?? files[path.startsWith("/") ? path : `/${path}`];
+};
+
+const getAllCode = (files: SandpackFileMap): string => {
+  return Object.values(files).join("\n");
 };
 
 export const verifySubmission = (
-  submittedFiles: SandpackFiles,
-  rawRules: unknown
+  submittedFiles: SandpackFileMap,
+  verificationRules: unknown,
 ): VerificationResult => {
-  const rules = extractVerificationRules(rawRules);
-  const combinedCode = combineAllCode(submittedFiles);
-  const submittedPaths = Object.keys(submittedFiles);
+  const rules = extractVerificationRules(verificationRules);
 
-  const missing = (rules.mustContain ?? []).filter(
-    (token) => !combinedCode.includes(token)
-  );
+  const missing: string[] = [];
+  const forbidden: string[] = [];
+  const missingFiles: string[] = [];
 
-  const forbidden = (rules.mustNotContain ?? []).filter((token) =>
-    combinedCode.includes(token)
-  );
+  const requiredFiles = rules.requiredFiles ?? [];
+  const mustContain = rules.mustContain ?? [];
+  const mustNotContain = rules.mustNotContain ?? [];
 
-  const missingFiles = (rules.requiredFiles ?? []).filter(
-    (path) => !submittedPaths.includes(path)
-  );
+  for (const filePath of requiredFiles) {
+    const fileCode = getFileCode(submittedFiles, filePath);
+
+    if (fileCode === undefined) {
+      missingFiles.push(filePath);
+    }
+  }
+
+  for (const rule of mustContain) {
+    if (typeof rule === "string") {
+      const allCode = getAllCode(submittedFiles);
+
+      if (!allCode.includes(rule)) {
+        missing.push(rule);
+      }
+
+      continue;
+    }
+
+    const filePath = rule.file;
+    const text = rule.text;
+
+    if (filePath) {
+      const fileCode = getFileCode(submittedFiles, filePath);
+
+      if (fileCode === undefined) {
+        missingFiles.push(filePath);
+        continue;
+      }
+
+      if (!fileCode.includes(text)) {
+        missing.push(`${filePath}: ${text}`);
+      }
+
+      continue;
+    }
+
+    const allCode = getAllCode(submittedFiles);
+
+    if (!allCode.includes(text)) {
+      missing.push(text);
+    }
+  }
+
+  for (const rule of mustNotContain) {
+    if (typeof rule === "string") {
+      const allCode = getAllCode(submittedFiles);
+
+      if (allCode.includes(rule)) {
+        forbidden.push(rule);
+      }
+
+      continue;
+    }
+
+    const filePath = rule.file;
+    const text = rule.text;
+
+    if (filePath) {
+      const fileCode = getFileCode(submittedFiles, filePath);
+
+      if (fileCode && fileCode.includes(text)) {
+        forbidden.push(`${filePath}: ${text}`);
+      }
+
+      continue;
+    }
+
+    const allCode = getAllCode(submittedFiles);
+
+    if (allCode.includes(text)) {
+      forbidden.push(text);
+    }
+  }
+
+  const passed =
+    missing.length === 0 &&
+    forbidden.length === 0 &&
+    missingFiles.length === 0;
 
   const totalChecks =
-    (rules.mustContain?.length ?? 0) +
-    (rules.mustNotContain?.length ?? 0) +
-    (rules.requiredFiles?.length ?? 0);
+    requiredFiles.length + mustContain.length + mustNotContain.length;
 
   const failedChecks = missing.length + forbidden.length + missingFiles.length;
-
-  const passed = failedChecks === 0;
 
   const score =
     totalChecks === 0
       ? 100
-      : Math.max(0, Math.round(((totalChecks - failedChecks) / totalChecks) * 100));
-
-  let summary = "Submission passed verification.";
-
-  if (!passed) {
-    const parts: string[] = [];
-
-    if (missing.length > 0) {
-      parts.push(`Missing required content: ${missing.join(", ")}`);
-    }
-
-    if (forbidden.length > 0) {
-      parts.push(`Contains forbidden content: ${forbidden.join(", ")}`);
-    }
-
-    if (missingFiles.length > 0) {
-      parts.push(`Missing required files: ${missingFiles.join(", ")}`);
-    }
-
-    summary = parts.join(" | ");
-  }
+      : Math.max(
+          0,
+          Math.round(((totalChecks - failedChecks) / totalChecks) * 100),
+        );
 
   return {
     passed,
     score,
     feedback: {
-      summary,
       missing,
       forbidden,
       missingFiles,
+      summary: passed
+        ? "Submission passed verification."
+        : [
+            missing.length > 0
+              ? `Missing required content: ${missing.join(", ")}`
+              : "",
+            missingFiles.length > 0
+              ? `Missing required files: ${missingFiles.join(", ")}`
+              : "",
+            forbidden.length > 0
+              ? `Forbidden content found: ${forbidden.join(", ")}`
+              : "",
+          ]
+            .filter(Boolean)
+            .join(" "),
     },
   };
 };
