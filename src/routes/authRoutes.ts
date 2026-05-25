@@ -1,5 +1,5 @@
 import express from 'express';
-import { register, login, updateProfile, getProfile, logout } from '../controllers/authController.js';
+import { register, login, updateProfile, getProfile, logout, googleLogin } from '../controllers/authController.js';
 import { protect } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -18,6 +18,7 @@ router.post('/logout', protect, logout);
 router.put('/profile', protect, updateProfile);
 
 router.get('/profile', protect, getProfile);
+router.post('/google', googleLogin)
 
 
 export default router;

@@ -15,10 +15,11 @@ model User {
   name               String
   userName           String?  @unique
   email              String   @unique
-  password           String
+  password           String?
   theme              String   @default("code dark")
   hasProvider        Boolean  @default(false)
   provider           String?
+  providerId         String?  @unique
   userImage          String?
   userImageId        String?
   bio                String?

@@ -1,10 +1,10 @@
 import { Request, Response } from "express";
 import bcrypt from "bcrypt";
-import jwt from "jsonwebtoken";
+
 import prisma from "../prisma.js";
 import { AuthRequest } from "../middleware/authMiddleware.js";
-
-const JWT_SECRET = process.env.JWT_SECRET || "fallback_secret";
+import { OAuth2Client } from "google-auth-library";
+import { generateToken } from "../utils/generateToken.js";
 
 const buildSafeUser = (user: {
   id: string;
@@ -63,9 +63,7 @@ export const register = async (
       },
     });
 
-    const token = jwt.sign({ id: newUser.id }, JWT_SECRET, {
-      expiresIn: "7d",
-    });
+const token = generateToken(newUser.id);
 
     res.status(201).json({
       message: "User registered successfully",
@@ -94,15 +92,21 @@ export const login = async (
       return;
     }
 
+    if (!user.password) {
+      res.status(400).json({
+        error: "This account uses Google sign in. Please continue with Google.",
+      });
+      return;
+    }
+
     const isMatch = await bcrypt.compare(password, user.password);
+
     if (!isMatch) {
       res.status(400).json({ error: "Invalid credentials" });
       return;
     }
 
-    const token = jwt.sign({ id: user.id }, JWT_SECRET, {
-      expiresIn: "7d",
-    });
+    const token = generateToken(user.id);
 
     res.status(200).json({
       message: "Logged in successfully",
@@ -186,5 +190,82 @@ export const getProfile = async (
   } catch (error) {
     console.error("Error fetching profile:", error);
     res.status(500).json({ error: "Failed to fetch profile" });
+  }
+};
+
+
+
+const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
+
+export const googleLogin = async (
+  req: Request,
+  res: Response
+): Promise<void> => {
+  try {
+    const { credential } = req.body;
+
+    if (!credential) {
+      res.status(400).json({ error: "Google credential is required" });
+      return;
+    }
+
+    if (!process.env.GOOGLE_CLIENT_ID) {
+      res.status(500).json({ error: "Google client id is not configured" });
+      return;
+    }
+
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: process.env.GOOGLE_CLIENT_ID,
+    });
+
+    const payload = ticket.getPayload();
+
+    if (!payload?.email) {
+      res.status(400).json({ error: "Google account email not found" });
+      return;
+    }
+
+    const email = payload.email;
+    const name = payload.name ?? email.split("@")[0];
+
+    let user = await prisma.user.findUnique({
+      where: { email },
+    });
+
+    if (!user) {
+      user = await prisma.user.create({
+        data: {
+          email,
+          name,
+          password: null,
+          hasProvider: true,
+          provider: "google",
+          providerId: payload.sub,
+          userImage: payload.picture ?? null,
+        },
+      });
+    } else {
+      user = await prisma.user.update({
+        where: { id: user.id },
+        data: {
+          hasProvider: true,
+          provider: "google",
+          providerId: user.providerId ?? payload.sub,
+          userImage: user.userImage ?? payload.picture ?? null,
+        },
+      });
+    }
+
+    const token = generateToken(user.id);
+
+    res.status(200).json({
+      message: "Logged in with Google successfully",
+      token,
+      user: buildSafeUser(user),
+    });
+  } catch (error) {
+    console.error("Google login error:", error);
+    res.status(500).json({ error: "Failed to sign in with Google" });
   }
 };
