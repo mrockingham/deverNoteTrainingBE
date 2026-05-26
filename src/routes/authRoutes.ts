@@ -18,6 +18,7 @@ router.post('/logout', protect, logout);
 router.put('/profile', protect, updateProfile);
 
 router.get('/profile', protect, getProfile);
+console.log("Auth routes loaded, including /google");
 router.post('/google', googleLogin)
 
 
