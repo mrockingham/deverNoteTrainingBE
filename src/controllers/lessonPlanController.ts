@@ -199,3 +199,168 @@ export const getLessonPlanById = async (
     res.status(500).json({ error: "Failed to fetch lesson plan" });
   }
 };
+
+
+export const getLessonLibrary = async (
+  req: AuthRequest,
+  res: Response,
+): Promise<void> => {
+  try {
+    const userId = req.user?.id;
+
+    if (!userId) {
+      res.status(401).json({ error: "Unauthorized" });
+      return;
+    }
+
+    const lessonPlans = await prisma.lessonPlan.findMany({
+      where: { creatorId: userId },
+      orderBy: { updatedAt: "desc" },
+      include: {
+        _count: {
+          select: {
+            steps: true,
+          },
+        },
+        steps: {
+          orderBy: {
+            orderIndex: "asc",
+          },
+          select: {
+            id: true,
+            orderIndex: true,
+            phaseTitle: true,
+            title: true,
+          },
+        },
+      },
+    });
+
+    const lessonPlanIds = lessonPlans.map((lesson) => lesson.id);
+
+    if (lessonPlanIds.length === 0) {
+      res.status(200).json({
+        summary: {
+          savedCount: 0,
+          completedCount: 0,
+          totalReps: 0,
+        },
+        lessonPlans: [],
+      });
+      return;
+    }
+
+    const sessions = await prisma.practiceSession.findMany({
+      where: {
+        userId,
+        lessonPlanId: {
+          in: lessonPlanIds,
+        },
+      },
+      orderBy: {
+        updatedAt: "desc",
+      },
+      include: {
+        attempts: {
+          select: {
+            id: true,
+            lessonStepId: true,
+            passed: true,
+            score: true,
+            createdAt: true,
+            submittedAt: true,
+          },
+          orderBy: {
+            createdAt: "desc",
+          },
+        },
+      },
+    });
+
+    const latestSessionByLessonPlanId = new Map<
+      string,
+      (typeof sessions)[number]
+    >();
+
+    for (const session of sessions) {
+      if (!latestSessionByLessonPlanId.has(session.lessonPlanId)) {
+        latestSessionByLessonPlanId.set(session.lessonPlanId, session);
+      }
+    }
+
+    const completedLessonPlanIds = new Set(
+      sessions
+        .filter((session) => session.status === "completed")
+        .map((session) => session.lessonPlanId),
+    );
+
+    const totalReps = sessions.reduce((sum, session) => {
+      return sum + session.totalReps;
+    }, 0);
+
+    const lessonPlansWithProgress = lessonPlans.map((lesson) => {
+      const latestSession = latestSessionByLessonPlanId.get(lesson.id);
+
+      const passedStepIds = new Set(
+        latestSession?.attempts
+          .filter((attempt) => attempt.passed)
+          .map((attempt) => attempt.lessonStepId) ?? [],
+      );
+
+      const currentStepIndex = latestSession?.currentStep ?? null;
+
+      const currentStep =
+        currentStepIndex !== null
+          ? lesson.steps.find((step) => step.orderIndex === currentStepIndex) ??
+            lesson.steps[currentStepIndex] ??
+            null
+          : null;
+
+      const latestAttempt = latestSession?.attempts?.[0] ?? null;
+
+      return {
+        ...lesson,
+
+        progress: {
+          stepCount: lesson._count.steps,
+          passedStepCount: passedStepIds.size,
+          hasSession: Boolean(latestSession),
+          isCompleted: latestSession?.status === "completed",
+
+          currentStepIndex,
+          currentStepTitle: currentStep?.title ?? null,
+          currentPhaseTitle: currentStep?.phaseTitle ?? null,
+
+          lastPracticedAt: latestSession?.updatedAt ?? null,
+          lastAttemptAt: latestAttempt?.submittedAt ?? latestAttempt?.createdAt ?? null,
+
+          latestSession: latestSession
+            ? {
+                id: latestSession.id,
+                status: latestSession.status,
+                currentStep: latestSession.currentStep,
+                currentRep: latestSession.currentRep,
+                bestRep: latestSession.bestRep,
+                totalReps: latestSession.totalReps,
+                startedAt: latestSession.startedAt,
+                updatedAt: latestSession.updatedAt,
+                completedAt: latestSession.completedAt,
+              }
+            : null,
+        },
+      };
+    });
+
+    res.status(200).json({
+      summary: {
+        savedCount: lessonPlans.length,
+        completedCount: completedLessonPlanIds.size,
+        totalReps,
+      },
+      lessonPlans: lessonPlansWithProgress,
+    });
+  } catch (error) {
+    console.error("Error fetching lesson library:", error);
+    res.status(500).json({ error: "Failed to fetch lesson library" });
+  }
+};
